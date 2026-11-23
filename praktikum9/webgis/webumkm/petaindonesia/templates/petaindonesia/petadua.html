@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peta Jabodetabek</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { display: flex; flex-direction: column; height: 100vh; }
+        header {
+            background-color: #0b4f8a;
+            color: white;
+            padding: 14px 20px;
+            font-size: 20px;
+            font-weight: bold;
+        }
+        #map { flex: 1; width: 100%; }
+        .city-panel {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            width: 165px;
+        }
+        .city-panel h4 {
+            margin-bottom: 10px;
+            font-size: 15px;
+            color: #222;
+        }
+        .city-panel button {
+            display: block;
+            width: 100%;
+            padding: 7px 10px;
+            margin-bottom: 6px;
+            border: 1px solid #ccc;
+            background: #f8f9fa;
+            border-radius: 4px;
+            text-align: left;
+            cursor: pointer;
+            font-size: 13px;
+            transition: 0.2s;
+        }
+        .city-panel button:hover, .city-panel button.active {
+            background: #0b4f8a;
+            color: white;
+            border-color: #0b4f8a;
+        }
+        .city-panel button:last-child { margin-bottom: 0; }
+        .city-tooltip {
+            font-weight: bold;
+            font-size: 13px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+        }
+    </style>
+</head>
+<body>
+    <header>Peta Jabodetabek: Jakarta, Bogor, Depok, Tangerang, Bekasi</header>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors'
+        });
+
+        const satelit = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri'
+        });
+
+        const map = L.map('map', {
+            center: [-6.35, 106.82],
+            zoom: 10,
+            layers: [osm]
+        });
+
+        L.control.layers({ "OpenStreetMap": osm, "Satelit": satelit }).addTo(map);
+        L.control.scale({ imperial: false }).addTo(map);
+
+        const kotaJabodetabek = [
+            { nama: "Jakarta", coords: [-6.1754, 106.8272], info: "DKI Jakarta - Pusat Pemerintahan & Bisnis" },
+            { nama: "Bogor", coords: [-6.5971, 106.8060], info: "Kota Bogor - Kota Hujan" },
+            { nama: "Depok", coords: [-6.4025, 106.7942], info: "Kota Depok - Penyangga Selatan Jakarta" },
+            { nama: "Tangerang", coords: [-6.1783, 106.6319], info: "Kota Tangerang - Penyangga Barat Jakarta" },
+            { nama: "Bekasi", coords: [-6.2383, 106.9756], info: "Kota Bekasi - Penyangga Timur Jakarta" }
+        ];
+
+        const markers = {};
+        const group = L.featureGroup();
+
+        kotaJabodetabek.forEach(kota => {
+            const marker = L.marker(kota.coords)
+                .bindPopup(`<b>${kota.nama}</b><br>${kota.info}`)
+                .bindTooltip(kota.nama, {
+                    permanent: true,
+                    direction: 'right',
+                    offset: [10, -10],
+                    className: 'city-tooltip'
+                });
+            marker.addTo(group);
+            markers[kota.nama] = marker;
+        });
+
+        group.addTo(map);
+        map.fitBounds(group.getBounds().pad(0.2));
+
+        // Panel Kontrol Pilih Kota
+        const controlPanel = L.control({ position: 'topright' });
+        controlPanel.onAdd = function() {
+            const div = L.DomUtil.create('div', 'city-panel');
+            div.innerHTML = `
+                <h4>Pilih kota</h4>
+                <button onclick="fokusKota('Jakarta', this)">Jakarta</button>
+                <button onclick="fokusKota('Bogor', this)">Bogor</button>
+                <button onclick="fokusKota('Depok', this)">Depok</button>
+                <button onclick="fokusKota('Tangerang', this)">Tangerang</button>
+                <button onclick="fokusKota('Bekasi', this)">Bekasi</button>
+                <button onclick="tampilkanSemua(this)" class="active">Tampilkan semua</button>
+            `;
+            L.DomEvent.disableClickPropagation(div);
+            return div;
+        };
+        controlPanel.addTo(map);
+
+        function setActiveBtn(btn) {
+            document.querySelectorAll('.city-panel button').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+        }
+
+        function fokusKota(nama, btn) {
+            setActiveBtn(btn);
+            const target = markers[nama];
+            map.flyTo(target.getLatLng(), 13);
+            target.openPopup();
+        }
+
+        function tampilkanSemua(btn) {
+            setActiveBtn(btn);
+            map.closePopup();
+            map.fitBounds(group.getBounds().pad(0.2));
+        }
+    </script>
+</body>
+</html>

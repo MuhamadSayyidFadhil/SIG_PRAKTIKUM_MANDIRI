@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>15 Gempa Terkini (M 5.0+) - BMKG</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        body { display: flex; flex-direction: column; height: 100vh; }
+        header {
+            background-color: #0b4f8a;
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 20px; margin-bottom: 3px; }
+        header p { font-size: 12px; color: #d9e8f5; }
+        .btn-reload {
+            background: #f8f9fa;
+            color: #222;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .btn-reload:hover { background: #e2e6ea; }
+        .container { display: flex; flex: 1; overflow: hidden; }
+        .sidebar {
+            width: 340px;
+            background: #fff;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+        }
+        .gempa-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .gempa-item:hover { background: #f0f6fc; }
+        .gempa-top { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 5px; }
+        .mag-badge {
+            color: white;
+            font-weight: bold;
+            font-size: 13px;
+            padding: 3px 7px;
+            border-radius: 4px;
+            min-width: 38px;
+            text-align: center;
+        }
+        .bg-dangkal { background-color: #d93025; }
+        .bg-menengah { background-color: #f29900; }
+        .bg-dalam { background-color: #188038; }
+        .wilayah-text { font-weight: bold; font-size: 13px; color: #111; line-height: 1.3; }
+        .meta-text { font-size: 12px; color: #555; }
+        #map { flex: 1; height: 100%; }
+        .legend {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px 14px;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .legend h4 { margin-bottom: 6px; font-size: 13px; }
+        .legend-row { display: flex; align-items: center; gap: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+        .legend-note { margin-top: 6px; font-size: 11px; color: #555; border-top: 1px solid #eee; padding-top: 4px; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>15 Gempa Terkini (M 5.0+)</h1>
+            <p id="status-update">15 gempa M 5.0+ terakhir &bull; memuat data...</p>
+        </div>
+        <button class="btn-reload" onclick="muatDataGempa()">Muat ulang</button>
+    </header>
+
+    <div class="container">
+        <div class="sidebar" id="sidebar-list">
+            <p style="padding:15px; color:#555;">Mengambil data dari BMKG...</p>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; OpenStreetMap contributors | Data gempa: <a href="https://data.bmkg.go.id" target="_blank">BMKG</a>'
+        });
+
+        const satelit = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 18,
+            attribution: 'Tiles &copy; Esri | Data gempa: BMKG'
+        });
+
+        const map = L.map('map', {
+            center: [-2.5, 118.0],
+            zoom: 5,
+            layers: [osm]
+        });
+
+        L.control.layers({ "OpenStreetMap": osm, "Satelit": satelit }).addTo(map);
+        L.control.scale({ imperial: false }).addTo(map);
+
+        const layerGempa = L.layerGroup().addTo(map);
+        let markers = [];
+
+        function getWarnaKedalaman(km) {
+            if (km < 70) return '#d93025';
+            if (km <= 300) return '#f29900';
+            return '#188038';
+        }
+
+        function getKelasBadge(km) {
+            if (km < 70) return 'bg-dangkal';
+            if (km <= 300) return 'bg-menengah';
+            return 'bg-dalam';
+        }
+
+        function fokusGempa(index) {
+            const m = markers[index];
+            if (m) {
+                map.flyTo(m.getLatLng(), 7);
+                m.openPopup();
+            }
+        }
+
+        async function muatDataGempa() {
+            const sidebar = document.getElementById('sidebar-list');
+            const statusText = document.getElementById('status-update');
+            sidebar.innerHTML = '<p style="padding:15px; color:#555;">Memuat data terbaru...</p>';
+
+            try {
+                const res = await fetch('https://data.bmkg.go.id/DataMKG/TEWS/gempaterkini.json');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                const listGempa = (json.Infogempa?.gempa || []).slice(0, 15);
+
+                layerGempa.clearLayers();
+                markers = [];
+                sidebar.innerHTML = '';
+
+                listGempa.forEach((item, idx) => {
+                    const [latStr, lonStr] = item.Coordinates.split(',');
+                    const lat = parseFloat(latStr.trim());
+                    const lon = parseFloat(lonStr.trim());
+                    const mag = parseFloat(item.Magnitude);
+                    const kedalamanStr = item.Kedalaman;
+                    const kedalamanKm = parseFloat(kedalamanStr.replace('km', '').trim());
+
+                    const warna = getWarnaKedalaman(kedalamanKm);
+                    const badgeClass = getKelasBadge(kedalamanKm);
+                    const radius = Math.max(6, (mag - 4) * 5.5);
+
+                    // Tambah item ke sidebar
+                    const div = document.createElement('div');
+                    div.className = 'gempa-item';
+                    div.onclick = () => fokusGempa(idx);
+                    div.innerHTML = `
+                        <div class="gempa-top">
+                            <span class="mag-badge ${badgeClass}">${item.Magnitude}</span>
+                            <div class="wilayah-text">${item.Wilayah}</div>
+                        </div>
+                        <div class="meta-text">${idx + 1}. ${item.Tanggal} ${item.Jam} &bull; ${kedalamanStr}</div>
+                    `;
+                    sidebar.appendChild(div);
+
+                    // Tambah lingkaran ke peta
+                    const circle = L.circleMarker([lat, lon], {
+                        radius: radius,
+                        fillColor: warna,
+                        color: '#222',
+                        weight: 1,
+                        opacity: 1,
+                        fillOpacity: 0.85
+                    }).addTo(layerGempa);
+
+                    circle.bindPopup(`
+                        <div style="font-size:13px; line-height:1.5;">
+                            <b>#${idx + 1} - Magnitudo ${item.Magnitude}</b><br>
+                            <b>Lokasi:</b> ${item.Wilayah}<br>
+                            <b>Waktu:</b> ${item.Tanggal}, ${item.Jam}<br>
+                            <b>Kedalaman:</b> ${kedalamanStr}<br>
+                            <b>Koordinat:</b> ${lat}, ${lon}<br>
+                            <b>Potensi:</b> ${item.Potensi}
+                        </div>
+                    `);
+
+                    markers.push(circle);
+                });
+
+                const now = new Date();
+                const jamStr = now.toTimeString().split(' ')[0].replace(/:/g, '.');
+                statusText.innerHTML = `15 gempa M 5.0+ terakhir &bull; diperbarui ${jamStr}`;
+            } catch (err) {
+                sidebar.innerHTML = `<p style="padding:15px; color:red;">Gagal memuat data BMKG: ${err.message}</p>`;
+            }
+        }
+
+        const legend = L.control({ position: 'bottomright' });
+        legend.onAdd = function() {
+            const div = L.DomUtil.create('div', 'legend');
+            div.innerHTML = `
+                <h4>Kedalaman</h4>
+                <div class="legend-row"><span class="dot" style="background:#d93025;"></span> Dangkal (&lt; 70 km)</div>
+                <div class="legend-row"><span class="dot" style="background:#f29900;"></span> Menengah (70–300 km)</div>
+                <div class="legend-row"><span class="dot" style="background:#188038;"></span> Dalam (&gt; 300 km)</div>
+                <div class="legend-note">Ukuran lingkaran = magnitudo</div>
+            `;
+            return div;
+        };
+        legend.addTo(map);
+
+        muatDataGempa();
+    </script>
+</body>
+</html>
